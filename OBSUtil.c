@@ -19,6 +19,9 @@
 #include <psapi.h>
 #include <RestartManager.h>
 #include <strsafe.h>
+#include <aclapi.h>
+#include <sddl.h>
+#include <stdbool.h>
 #include "nsis/pluginapi.h"
 
 #pragma comment(linker, "/merge:.pdata=.rdata")
@@ -189,6 +192,69 @@ notfound:
 	return FALSE;
 }
 
+static bool add_aap_perms(const wchar_t *dir)
+{
+	PSECURITY_DESCRIPTOR sd = NULL;
+	SID *aap_sid = NULL;
+	SID *bu_sid = NULL;
+	PACL new_dacl1 = NULL;
+	PACL new_dacl2 = NULL;
+	bool success = false;
+
+	PACL dacl;
+	if (GetNamedSecurityInfoW(dir, SE_FILE_OBJECT,
+				  DACL_SECURITY_INFORMATION, NULL, NULL, &dacl,
+				  NULL, &sd) != ERROR_SUCCESS) {
+		goto fail;
+	}
+
+	EXPLICIT_ACCESSW ea = {0};
+	ea.grfAccessPermissions = GENERIC_READ | GENERIC_EXECUTE;
+	ea.grfAccessMode = GRANT_ACCESS;
+	ea.grfInheritance = SUB_CONTAINERS_AND_OBJECTS_INHERIT;
+	ea.Trustee.TrusteeForm = TRUSTEE_IS_SID;
+
+	/* ALL_APP_PACKAGES */
+	ConvertStringSidToSidW(L"S-1-15-2-1", &aap_sid);
+	ea.Trustee.ptstrName = (wchar_t *)aap_sid;
+
+	if (SetEntriesInAclW(1, &ea, dacl, &new_dacl1) != ERROR_SUCCESS) {
+		goto fail;
+	}
+
+	ea.grfAccessPermissions = GENERIC_READ | GENERIC_WRITE |
+				  GENERIC_EXECUTE;
+
+	/* BUILTIN_USERS */
+	ConvertStringSidToSidW(L"S-1-5-32-545", &bu_sid);
+	ea.Trustee.ptstrName = (wchar_t *)bu_sid;
+
+	DWORD s = SetEntriesInAclW(1, &ea, new_dacl1, &new_dacl2);
+	if (s != ERROR_SUCCESS) {
+		goto fail;
+	}
+
+	if (SetNamedSecurityInfoW((wchar_t *)dir, SE_FILE_OBJECT,
+				  DACL_SECURITY_INFORMATION, NULL, NULL,
+				  new_dacl2, NULL) != ERROR_SUCCESS) {
+		goto fail;
+	}
+
+	success = true;
+fail:
+	if (sd)
+		LocalFree(sd);
+	if (new_dacl1)
+		LocalFree(new_dacl1);
+	if (new_dacl2)
+		LocalFree(new_dacl2);
+	if (aap_sid)
+		LocalFree(aap_sid);
+	if (bu_sid)
+		LocalFree(bu_sid);
+	return success;
+}
+
 void __declspec(dllexport) IsProcessRunning(HWND hwndParent, int string_size, 
 	LPTSTR variables, stack_t **stacktop,
 	extra_parameters *extra, ...)
@@ -227,6 +293,22 @@ void __declspec(dllexport) IsDLLLoaded(HWND hwndParent, int string_size,
 
 notfound:
 	setuservariable(INST_R0, L"");
+}
+
+void __declspec(dllexport) AddAllApplicationPackages(HWND hwndParent, int string_size,
+	LPTSTR variables, stack_t **stacktop,
+	extra_parameters *extra, ...)
+{
+	wchar_t targetDir[MAX_PATH];
+
+	EXDLL_INIT();
+
+	popstring(targetDir);
+
+	if (!targetDir[0])
+		return;
+
+	add_aap_perms(targetDir);
 }
 
 void __declspec(dllexport) AddInUseFileCheck(HWND hwndParent, int string_size, 
