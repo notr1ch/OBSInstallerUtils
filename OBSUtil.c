@@ -312,7 +312,7 @@ retry:
 			{
 				int j;
 				int remaining = _countof(message);
-				for (i = 0; i < procCount; i++)
+				for (i = 0; i < (int)procCount; i++)
 				{
 					for (j = 0; j < i; j++)
 					{
