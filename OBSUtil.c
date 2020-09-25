@@ -333,6 +333,26 @@ void __declspec(dllexport) AddInUseFileCheck(HWND hwndParent, int string_size,
 	wcscpy (inUseNext->fileName, targetName);
 }
 
+void __declspec(dllexport) ResetInUseFileChecks(HWND hwndParent, int string_size,
+	LPTSTR variables, stack_t** stacktop,
+	extra_parameters* extra, ...)
+{
+	EXDLL_INIT();
+
+	ll_t *l, *o;
+
+	l = &inUseFiles;
+
+	while (l->next) {
+		o = l;
+		l = l->next;
+		free (o);
+	}
+	free (l);
+
+	inUseFiles.next = NULL;
+}
+
 void __declspec(dllexport) GetAppNameForInUseFiles(HWND hwndParent, int string_size, 
 	LPTSTR variables, stack_t **stacktop,
 	extra_parameters *extra, ...)
@@ -374,7 +394,7 @@ void __declspec(dllexport) GetAppNameForInUseFiles(HWND hwndParent, int string_s
 	{
 		if (RmRegisterResources(rmSession, count, fileNames, 0, NULL, 0, NULL) == ERROR_SUCCESS)
 		{
-			UINT procCount = 10;
+			UINT procCount = 16;
 			UINT procNeeded = 0;
 			DWORD rebootReason;
 			int ret;
