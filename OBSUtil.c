@@ -22,6 +22,8 @@
 #include <aclapi.h>
 #include <sddl.h>
 #include <stdbool.h>
+
+#include "nsis/api.h"
 #include "nsis/pluginapi.h"
 
 #pragma comment(linker, "/merge:.pdata=.rdata")
@@ -36,7 +38,17 @@ typedef struct ll_s
 } ll_t;
 
 static ll_t inUseFiles;
-static ll_t *inUseNext = &inUseFiles;
+
+HMODULE hSelf;
+
+UINT_PTR NSISCallback(enum NSPIM reason)
+{
+	if (reason == NSPIM_UNLOAD)
+	{
+		//TODO: Cleanup properly
+	}
+	return 0;
+}
 
 BOOL MatchingProcess(DWORD processID, const wchar_t *match)
 {
@@ -263,6 +275,8 @@ void __declspec(dllexport) IsProcessRunning(HWND hwndParent, int string_size,
 
 	EXDLL_INIT();
 
+	extra->RegisterPluginCallback(hSelf, NSISCallback);
+
 	popstring(targetName);
 
 	if (!targetName[0])
@@ -282,6 +296,8 @@ void __declspec(dllexport) IsDLLLoaded(HWND hwndParent, int string_size,
 	wchar_t targetName[1024];
 
 	EXDLL_INIT();
+
+	extra->RegisterPluginCallback(hSelf, NSISCallback);
 
 	popstring(targetName);
 
@@ -303,6 +319,8 @@ void __declspec(dllexport) AddAllApplicationPackages(HWND hwndParent, int string
 
 	EXDLL_INIT();
 
+	extra->RegisterPluginCallback(hSelf, NSISCallback);
+
 	popstring(targetDir);
 
 	if (!targetDir[0])
@@ -319,6 +337,8 @@ void __declspec(dllexport) AddInUseFileCheck(HWND hwndParent, int string_size,
 
 	EXDLL_INIT();
 
+	extra->RegisterPluginCallback(hSelf, NSISCallback);
+
 	popstring(targetName);
 
 	if (!targetName[0])
@@ -327,10 +347,15 @@ void __declspec(dllexport) AddInUseFileCheck(HWND hwndParent, int string_size,
 	if (wcslen(targetName) >= MAX_PATH - 1)
 		return;
 
-	inUseNext->next = malloc (sizeof(*inUseNext));
-	inUseNext = inUseNext->next;
-	inUseNext->next = NULL;
-	wcscpy (inUseNext->fileName, targetName);
+	ll_t *l;
+	l = &inUseFiles;
+	while (l->next)
+		l = l->next;
+
+	l->next = malloc (sizeof(*l));
+	l = l->next;
+	l->next = NULL;
+	wcscpy (l->fileName, targetName);
 }
 
 void __declspec(dllexport) ResetInUseFileChecks(HWND hwndParent, int string_size,
@@ -339,9 +364,14 @@ void __declspec(dllexport) ResetInUseFileChecks(HWND hwndParent, int string_size
 {
 	EXDLL_INIT();
 
+	extra->RegisterPluginCallback(hSelf, NSISCallback);
+
+	if (!inUseFiles.next)
+		return;
+
 	ll_t *l, *o;
 
-	l = &inUseFiles;
+	l = inUseFiles.next;
 
 	while (l->next) {
 		o = l;
@@ -364,6 +394,8 @@ void __declspec(dllexport) GetAppNameForInUseFiles(HWND hwndParent, int string_s
 	ll_t *l;
 
 	EXDLL_INIT();
+
+	extra->RegisterPluginCallback(hSelf, NSISCallback);
 
 	message[0] = 0;
 
@@ -435,6 +467,8 @@ skipOne:;
 
 		RmEndSession (rmSession);
 	}
+
+	free (fileNames);
 }
 
 void __declspec(dllexport) KillProcess(HWND hwndParent, int string_size, 
@@ -444,6 +478,8 @@ void __declspec(dllexport) KillProcess(HWND hwndParent, int string_size,
 	wchar_t targetName[1024];
 
 	EXDLL_INIT();
+
+	extra->RegisterPluginCallback(hSelf, NSISCallback);
 
 	popstring(targetName);
 
@@ -459,10 +495,6 @@ notfound:
 
 BOOL WINAPI DllMain(HINSTANCE hInst, ULONG ul_reason_for_call, LPVOID lpReserved)
 {
-	if (ul_reason_for_call == DLL_PROCESS_ATTACH)
-	{
-		HMODULE hMod;
-		GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_PIN | GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, (LPCWSTR)hInst, &hMod);
-	}
+	hSelf = (HMODULE)hInst;
 	return TRUE;
 }
